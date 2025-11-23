@@ -1,3 +1,4 @@
+
 🚀 Translation API - DevOps Project
 📋 Description
 Une API de traduction développée avec Flask dans le cadre d'un projet DevOps. Ce service fournit des traductions texte avec caching Redis, métriques avancées et observabilité complète.
@@ -289,9 +290,5 @@ Créer une branche feature
 Tester les modifications
 
 Soumettre une Pull Request
-
-📞 Support
-Pour toute question :
-
-Ouvrir une Issue GitHub
+)
 
