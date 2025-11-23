@@ -69,7 +69,7 @@ jobs:
         bandit -r . -f html -o bandit-report.html -c .bandit.yml || true
     
     - name: Upload SAST reports
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: sast-reports
         path: |
