@@ -1,5 +1,4 @@
-version: '3.8'
-services:
+﻿services:
   translation-api:
     build: .
     ports:
@@ -8,8 +7,10 @@ services:
       - REDIS_HOST=redis
     depends_on:
       - redis
+    restart: unless-stopped
   
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    restart: unless-stopped
