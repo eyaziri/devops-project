@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: api
-        image: translation-api:latest  # Utilise l'image locale
+        image: IMAGE_PLACEHOLDER
         ports:
         - containerPort: 5001
         env:
