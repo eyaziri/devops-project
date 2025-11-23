@@ -80,7 +80,7 @@ pre {
         <div class="metrics-title">
             Metrics:<br>
         </div>
-        Total lines of code: <span id="loc">191</span><br>
+        Total lines of code: <span id="loc">280</span><br>
         Total lines skipped (#nosec): <span id="nosec">0</span>
     </div>
 </div>
@@ -99,13 +99,13 @@ pre {
     <b>Confidence: </b>MEDIUM<br>
     <b>CWE: </b><a href="https://cwe.mitre.org/data/definitions/605.html" target="_blank">CWE-605</a><br>
     <b>File: </b><a href=".\app.py" target="_blank">.\app.py</a><br>
-    <b>Line number: </b>229<br>
+    <b>Line number: </b>333<br>
     <b>More info: </b><a href="https://bandit.readthedocs.io/en/1.9.1/plugins/b104_hardcoded_bind_all_interfaces.html" target="_blank">https://bandit.readthedocs.io/en/1.9.1/plugins/b104_hardcoded_bind_all_interfaces.html</a><br>
 
 <div class="code">
 <pre>
-228	    print(&#x27;   curl -X POST http://localhost:5000/translate -H &quot;Content-Type: application/json&quot; -d &quot;{\&quot;text\&quot;: \&quot;hello world\&quot;, \&quot;target_lang\&quot;: \&quot;fr\&quot;}&quot;&#x27;)
-229	    app.run(host=&#x27;0.0.0.0&#x27;, port=5000, debug=False)
+332	    print(&quot;   ✅ Active requests monitoring&quot;)
+333	    app.run(host=&#x27;0.0.0.0&#x27;, port=5001, debug=False)
 </pre>
 </div>
 
