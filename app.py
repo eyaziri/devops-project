@@ -5,10 +5,27 @@ import time
 import logging
 from datetime import datetime, timezone
 import os
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, Gauge
 
 # Configuration de l'application
 app = Flask(__name__)
 
+# ==================== METRIQUES PROMETHEUS ====================
+# Compteurs
+REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP Requests', ['method', 'endpoint', 'status_code'])
+TRANSLATION_COUNT = Counter('translations_total', 'Total Translations', ['target_lang', 'cached'])
+ERROR_COUNT = Counter('errors_total', 'Total Errors', ['type'])
+
+# Histogrammes (pour les durées)
+REQUEST_DURATION = Histogram('http_request_duration_seconds', 'HTTP request duration', ['method', 'endpoint'])
+TRANSLATION_DURATION = Histogram('translation_duration_seconds', 'Translation processing time')
+
+# Jauges (pour les valeurs actuelles)
+ACTIVE_REQUESTS = Gauge('active_requests', 'Currently active requests')
+REDIS_CONNECTION_STATUS = Gauge('redis_connected', 'Redis connection status')
+CACHE_SIZE = Gauge('cache_size', 'Number of cached translations')
+
+# ==================== CONFIGURATION EXISTANTE ====================
 # Configuration Redis avec gestion d'erreur
 try:
     cache = redis.Redis(
@@ -20,10 +37,12 @@ try:
     )
     # Test de connexion
     cache.ping()
+    REDIS_CONNECTION_STATUS.set(1)
     print("✅ Redis connecté avec succès!")
 except redis.ConnectionError as e:
     print(f"❌ Erreur Redis: {e}")
     print("💡 Utilisation du cache en mémoire")
+    REDIS_CONNECTION_STATUS.set(0)
     # Fallback: cache en mémoire
     class MemoryCache:
         def __init__(self):
@@ -53,7 +72,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Métriques
+# Métriques internes (backup)
 metrics = {
     'total_requests': 0,
     'cache_hits': 0,
@@ -92,6 +111,7 @@ class TranslationService:
                 
         except Exception as e:
             logger.warning(f"Translation service down, using mock: {str(e)}")
+            ERROR_COUNT.labels(type='translation_api').inc()
             return TranslationService.mock_translation(text, target_lang)
     
     @staticmethod
@@ -117,35 +137,57 @@ class TranslationService:
     def get_cache_key(text, target_lang):
         return f"translation:{target_lang}:{hash(text)}"
 
-# Middleware
+# ==================== MIDDLEWARE AMÉLIORÉ ====================
 @app.before_request
 def before_request():
     request.start_time = time.time()
     request.trace_ctx = TraceContext()
+    ACTIVE_REQUESTS.inc()  # Incrémente les requêtes actives
     logger.info(f"Request: {request.method} {request.path}")
 
 @app.after_request
 def after_request(response):
     response_time = time.time() - request.start_time
+    
+    # Métriques Prometheus
+    REQUEST_COUNT.labels(
+        method=request.method,
+        endpoint=request.path,
+        status_code=response.status_code
+    ).inc()
+    
+    REQUEST_DURATION.labels(
+        method=request.method,
+        endpoint=request.path
+    ).observe(response_time)
+    
+    ACTIVE_REQUESTS.dec()  # Décrémente les requêtes actives
+    
+    # Métriques internes (existantes)
+    metrics['total_requests'] += 1
     metrics['response_times'].append(response_time)
-    if len(metrics['response_times']) > 100:  # Garder seulement les 100 dernières
+    if len(metrics['response_times']) > 100:
         metrics['response_times'].pop(0)
+        
     return response
 
-# Routes
+# ==================== ROUTES AMÉLIORÉES ====================
 @app.route('/translate', methods=['POST'])
 def translate_text():
     metrics['total_requests'] += 1
+    translation_start_time = time.time()
     
     try:
         data = request.get_json()
         if not data:
+            ERROR_COUNT.labels(type='invalid_request').inc()
             return jsonify({'error': 'No JSON data provided'}), 400
             
         text = data.get('text', '').strip()
         target_lang = data.get('target_lang', 'fr')
         
         if not text:
+            ERROR_COUNT.labels(type='invalid_request').inc()
             return jsonify({'error': 'Text is required'}), 400
         
         # Vérifier le cache
@@ -154,6 +196,8 @@ def translate_text():
         
         if cached_result:
             metrics['cache_hits'] += 1
+            TRANSLATION_COUNT.labels(target_lang=target_lang, cached='true').inc()
+            TRANSLATION_DURATION.observe(time.time() - translation_start_time)
             logger.info(f"Cache hit: {text[:30]}...")
             return jsonify({
                 'translated_text': cached_result,
@@ -166,6 +210,8 @@ def translate_text():
         
         if translated:
             cache.setex(cache_key, 3600, translated)  # Cache 1 heure
+            TRANSLATION_COUNT.labels(target_lang=target_lang, cached='false').inc()
+            TRANSLATION_DURATION.observe(time.time() - translation_start_time)
             logger.info(f"New translation: {text[:30]}... → {translated[:30]}...")
             
             return jsonify({
@@ -175,17 +221,53 @@ def translate_text():
             })
         else:
             metrics['translation_errors'] += 1
+            ERROR_COUNT.labels(type='translation_failed').inc()
             return jsonify({'error': 'Translation failed'}), 500
             
     except Exception as e:
         metrics['translation_errors'] += 1
+        ERROR_COUNT.labels(type='unexpected_error').inc()
         logger.error(f"Error: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
 
+# ==================== NOUVELLES ROUTES OBSERVABILITÉ ====================
+@app.route('/metrics/prometheus')
+def prometheus_metrics():
+    """Endpoint Prometheus pour le scraping"""
+    # Met à jour la jauge de taille du cache
+    try:
+        cache_keys = len(cache.keys('translation:*'))
+        CACHE_SIZE.set(cache_keys)
+    except:
+        CACHE_SIZE.set(0)
+    
+    return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
+
+@app.route('/metrics/detailed')
+def detailed_metrics():
+    """Endpoint métriques détaillées combinées"""
+    recent_times = metrics['response_times'][-10:]
+    avg_time = sum(recent_times)/len(recent_times) if recent_times else 0
+    cache_rate = metrics['cache_hits'] / metrics['total_requests'] if metrics['total_requests'] > 0 else 0
+    
+    return jsonify({
+        'application_metrics': {
+            'total_requests': metrics['total_requests'],
+            'cache_hits': metrics['cache_hits'],
+            'cache_hit_rate': round(cache_rate, 2),
+            'translation_errors': metrics['translation_errors'],
+            'avg_response_time_seconds': round(avg_time, 3),
+            'redis_connected': cache.ping()
+        },
+        'prometheus_endpoint': '/metrics/prometheus',
+        'health_endpoint': '/health'
+    })
+
+# ==================== ROUTES EXISTANTES ====================
 @app.route('/metrics')
 def get_metrics():
-    """Endpoint pour les métriques"""
-    recent_times = metrics['response_times'][-10:]  # 10 dernières requêtes
+    """Endpoint pour les métriques (compatibilité)"""
+    recent_times = metrics['response_times'][-10:]
     avg_time = sum(recent_times)/len(recent_times) if recent_times else 0
     cache_rate = metrics['cache_hits'] / metrics['total_requests'] if metrics['total_requests'] > 0 else 0
     
@@ -195,7 +277,8 @@ def get_metrics():
         'cache_hit_rate': round(cache_rate, 2),
         'translation_errors': metrics['translation_errors'],
         'avg_response_time_seconds': round(avg_time, 3),
-        'redis_connected': cache.ping()
+        'redis_connected': cache.ping(),
+        'prometheus_metrics': 'Available at /metrics/prometheus'
     })
 
 @app.route('/health')
@@ -203,27 +286,48 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now(timezone.utc).isoformat(),
-        'redis_connected': cache.ping()
+        'redis_connected': cache.ping(),
+        'observability': {
+            'prometheus_endpoint': '/metrics/prometheus',
+            'detailed_metrics': '/metrics/detailed'
+        }
     })
 
 @app.route('/')
 def home():
     return jsonify({
         'message': '🚀 Translation API is running!',
-        'version': '1.0.0',
+        'version': '2.0.0',
+        'features': [
+            'REST API for translation',
+            'Redis caching',
+            'Advanced observability with Prometheus',
+            'Health checks',
+            'Performance metrics'
+        ],
         'endpoints': {
-            'POST /translate': 'Translate text (JSON: {"text": "hello", "target_lang": "fr"})',
-            'GET /metrics': 'Get performance metrics',
+            'POST /translate': 'Translate text',
+            'GET /metrics': 'Basic metrics',
+            'GET /metrics/prometheus': 'Prometheus metrics',
+            'GET /metrics/detailed': 'Detailed metrics',
             'GET /health': 'Health check'
         }
     })
 
 if __name__ == '__main__':
-    print("🚀 Starting Translation API...")
+    print("🚀 Starting Translation API with Advanced Observability...")
     print("📊 Endpoints:")
     print("   POST http://localhost:5000/translate")
     print("   GET  http://localhost:5000/metrics") 
+    print("   GET  http://localhost:5000/metrics/prometheus  ← NOUVEAU!")
+    print("   GET  http://localhost:5000/metrics/detailed    ← NOUVEAU!")
     print("   GET  http://localhost:5000/health")
-    print("\n💡 Exemple de test:")
-    print('   curl -X POST http://localhost:5000/translate -H "Content-Type: application/json" -d "{\"text\": \"hello world\", \"target_lang\": \"fr\"}"')
+    print("\n💡 Test Prometheus metrics:")
+    print('   curl http://localhost:5000/metrics/prometheus')
+    print("\n🎯 Features added:")
+    print("   ✅ Prometheus metrics integration")
+    print("   ✅ Request counters and histograms")
+    print("   ✅ Translation-specific metrics")
+    print("   ✅ Error tracking by type")
+    print("   ✅ Active requests monitoring")
     app.run(host='0.0.0.0', port=5000, debug=False)
