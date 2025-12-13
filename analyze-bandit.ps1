@@ -20,8 +20,18 @@ if ($totals.issues -gt 0) {
     $report.results | Group-Object issue_severity | ForEach-Object {
         $severity = $_.Name
         $count = $_.Count
-        $color = if ($severity -eq "HIGH") { "Red" } elseif ($severity -eq "MEDIUM") { "Yellow" } else { "Gray" }
-        Write-Host "   $severity: $count" -ForegroundColor $color
+        
+        # Correction ici : variable $color définie proprement
+        if ($severity -eq "HIGH") {
+            $color = "Red"
+        } elseif ($severity -eq "MEDIUM") {
+            $color = "Yellow"
+        } else {
+            $color = "Gray"
+        }
+        
+        # Correction ici : utilisation de la variable correctement
+        Write-Host "   $($severity): $count" -ForegroundColor $color
     }
     
     Write-Host "`nDETAILS DES PROBLEMES:" -ForegroundColor Yellow
