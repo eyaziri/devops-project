@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Environnements virtuels
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Fichiers générés par les scripts
+bandit-test.json
+security-report.html
+security-report.json
+bandit-final.json
+
+# Dossiers d'outils
+.zap/
+
+# Logs et temporaires
+*.log
+*.tmp
+*.pid
+
+# Fichiers de déploiement sensibles
+# (à ignorer si contiennent des secrets)
+# deployment.yaml
+# k8s/*.yaml

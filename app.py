@@ -178,7 +178,12 @@ def translate_text():
     translation_start_time = time.time()
     
     try:
-        data = request.get_json()
+        try:
+            data = request.get_json()
+        except:
+            ERROR_COUNT.labels(type='invalid_json').inc()
+            return jsonify({'error': 'Invalid JSON data'}), 400
+        
         if not data:
             ERROR_COUNT.labels(type='invalid_request').inc()
             return jsonify({'error': 'No JSON data provided'}), 400
