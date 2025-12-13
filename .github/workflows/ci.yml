@@ -33,7 +33,6 @@ jobs:
         pip install -r requirements.txt
         pip install pytest requests
     
-    
     - name: Run unit tests
       run: |
         python test_app.py
@@ -85,7 +84,7 @@ jobs:
         token: ${{ github.token }}
     
     - name: Upload DAST report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4  # CORRIGÉ : v4 au lieu de v3
       with:
         name: dast-reports
         path: |
@@ -139,7 +138,7 @@ jobs:
         echo "✅ Observability data captured"
     
     - name: Upload observability evidence
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4  # CORRIGÉ : v4 au lieu de v3
       with:
         name: observability-proof
         path: |
@@ -196,18 +195,23 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Set up Kind
-      uses: helm/kind-action@v1.8.0
-      
+    # Vous utilisez Kind ET Minikube - choisissez l'un des deux
+    - name: Set up Kubernetes (Kind)
+      run: |
+        # Installer Kind
+        curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+        chmod +x ./kind
+        sudo mv ./kind /usr/local/bin/kind
+        
+        # Installer kubectl
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        sudo mv kubectl /usr/local/bin/kubectl
+    
     - name: Create Kind cluster
       run: |
         kind create cluster --name devops-cluster
         kubectl cluster-info --context kind-devops-cluster
-        
-    - name: Start minikube cluster
-      run: |
-        minikube start --driver=docker --memory=4096 --cpus=2
-        minikube status
         echo "🔄 Waiting for cluster to be ready..."
         sleep 30
     
@@ -221,23 +225,32 @@ jobs:
         echo "📦 Applied Kubernetes manifests"
         
         # Wait for deployment to be ready
+        echo "⏳ Waiting for deployment to be ready..."
         kubectl wait --for=condition=available --timeout=300s deployment/translation-api
         echo "✅ Deployment is ready"
     
     - name: Verify deployment
       run: |
         # Check resources
+        echo "=== Kubernetes Resources ==="
         kubectl get all
-        kubectl get pods -o wide
-        kubectl get services
+        echo ""
         
-        # Check logs
+        echo "=== Pods ==="
+        kubectl get pods -o wide
+        echo ""
+        
+        echo "=== Services ==="
+        kubectl get services
+        echo ""
+        
+        echo "=== Pod Logs ==="
         kubectl logs deployment/translation-api --tail=20
         
-        # Test service (if possible)
-        minikube service translation-service --url > service-url.txt || echo "Service URL captured"
-        
-        echo "🔍 Deployment verification completed"
+        # Get service URL for Kind
+        echo "=== Service URL ==="
+        kubectl get service translation-service -o jsonpath='{.spec.clusterIP}:{.spec.ports[0].port}' > service-url.txt
+        echo "Service: $(cat service-url.txt)"
     
     - name: Capture deployment evidence
       run: |
@@ -245,14 +258,12 @@ jobs:
         kubectl get all -o wide > k8s-cluster-state.txt
         kubectl describe deployment translation-api > k8s-deployment-describe.txt
         kubectl logs deployment/translation-api > k8s-pod-logs.txt
-        
-        # Capture service details
         kubectl describe service translation-service > k8s-service-describe.txt
         
         echo "📸 Kubernetes deployment evidence captured"
     
     - name: Upload Kubernetes evidence
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4  # CORRIGÉ : v4 au lieu de v3
       with:
         name: kubernetes-deployment
         path: |
@@ -261,6 +272,11 @@ jobs:
           k8s-pod-logs.txt
           k8s-service-describe.txt
           service-url.txt
+    
+    - name: Clean up Kind cluster
+      if: always()
+      run: |
+        kind delete cluster --name devops-cluster || true
 
   final-report:
     runs-on: ubuntu-latest
@@ -289,7 +305,7 @@ jobs:
         echo "- Docker image: ${{ secrets.DOCKERHUB_USERNAME }}/translation-api:latest" >> final-report.md
     
     - name: Upload final report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4  # CORRIGÉ : v4 au lieu de v3
       with:
         name: final-documentation
         path: final-report.md
