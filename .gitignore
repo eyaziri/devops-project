@@ -1,0 +1,40 @@
+# Dossier Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Environnements virtuels
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Fichiers de cache/session
+.DS_Store
+Thumbs.db
+
+# Fichiers générés par Bandit (si version finale conservée uniquement)
+bandit-final.json
+security-report.json
+
+# Fichiers HTML générés (si générés automatiquement)
+security-report.html
+test.html
+
+# Dossiers d'outils de sécurité/scan
+.zap/
+
+# Fichiers de log ou temporaires
+*.log
+*.tmp
+
+# Fichiers de déploiement sensibles (selon votre cas)
+# deployment.yaml  # à ignorer si contient des infos sensibles
+# docker-compose.yml  # si contient des secrets (sinon garder)

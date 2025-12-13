@@ -1,0 +1,126 @@
+pip install -r requirements.txt
+
+#demmarage de redis(utilisation de cache redis)
+
+docker run -d -p 6379:6379 --name redis-cache redis:alpine
+
+#Exécutez l'application
+
+python app.py
+
+#Utiliser curl.exe
+
+# Si vous avez curl.exe dans votre PATH
+curl.exe http://localhost:5001/
+
+curl.exe -X POST http://localhost:5001/translate `
+  -H "Content-Type: application/json" `
+  -d '{"text": "hello world", "target_lang": "fr"}'
+
+
+
+1. Test de traduction simple :
+
+powershell
+# Test basique
+$body = '{"text": "hello world", "target_lang": "fr"}'
+Invoke-RestMethod -Uri "http://localhost:5001/translate" -Method Post -Body $body -ContentType "application/json"
+2. Test avec plusieurs langues :
+powershell
+$tests = @(
+    @{text="hello"; lang="fr"},
+    @{text="good morning"; lang="es"},
+    @{text="thank you"; lang="de"},
+    @{text="i love programming"; lang="fr"}
+)
+
+foreach ($test in $tests) {
+    $body = @{
+        text = $test.text
+        target_lang = $test.lang
+    } | ConvertTo-Json
+    
+    $result = Invoke-RestMethod -Uri "http://localhost:5001/translate" -Method Post -Body $body -ContentType "application/json"
+    
+    Write-Host "🌍 EN: $($test.text)" -ForegroundColor White
+    Write-Host "💬 $($test.lang.ToUpper()): $($result.translated_text)" -ForegroundColor Green
+    Write-Host "📦 Cache: $($result.cached)" -ForegroundColor Yellow
+    Write-Host "🆔 Trace: $($result.trace_id)" -ForegroundColor Gray
+    Write-Host "---"
+}
+3. Test de performance avec cache :
+powershell
+# Premier appel (pas de cache)
+Write-Host "=== PREMIER APPEL (sans cache) ===" -ForegroundColor Cyan
+$body = '{"text": "performance test", "target_lang": "fr"}'
+$result1 = Invoke-RestMethod -Uri "http://localhost:5001/translate" -Method Post -Body $body -ContentType "application/json"
+Write-Host "Cache: $($result1.cached)" -ForegroundColor Red
+
+# Deuxième appel (avec cache)
+Write-Host "`n=== DEUXIÈME APPEL (avec cache) ===" -ForegroundColor Cyan
+$result2 = Invoke-RestMethod -Uri "http://localhost:5001/translate" -Method Post -Body $body -ContentType "application/json"
+Write-Host "Cache: $($result2.cached)" -ForegroundColor Green
+4. Test des métriques après traduction :
+powershell
+# Vérifie les métriques après quelques traductions
+Write-Host "=== MÉTRIQUES AVANT ===" -ForegroundColor Yellow
+Invoke-RestMethod -Uri "http://localhost:5001/metrics" -Method Get
+
+# Fais quelques traductions
+1..3 | ForEach-Object {
+    $body = "{\"text\": \"test $_\", \"target_lang\": \"fr\"}"
+    Invoke-RestMethod -Uri "http://localhost:5001/translate" -Method Post -Body $body -ContentType "application/json" | Out-Null
+}
+
+Write-Host "`n=== MÉTRIQUES APRÈS ===" -ForegroundColor Yellow
+Invoke-RestMethod -Uri "http://localhost:5001/metrics" -Method Get
+5. Test Prometheus après traduction :
+powershell
+# Les métriques Prometheus
+Write-Host "=== MÉTRIQUES PROMETHEUS ===" -ForegroundColor Magenta
+(Invoke-WebRequest -Uri "http://localhost:5001/metrics/prometheus" -Method Get).Content
+🎯 SCRIPT COMPLET DE TEST :
+Crée ce fichier : test-translation.ps1
+powershell
+Write-Host "=== TEST COMPLET DE TRADUCTION ===" -ForegroundColor Cyan
+
+Write-Host "`n1. Test de santé..." -ForegroundColor Yellow
+$health = Invoke-RestMethod -Uri "http://localhost:5001/health" -Method Get
+Write-Host "✅ Status: $($health.status)" -ForegroundColor Green
+
+Write-Host "`n2. Test de traduction simple..." -ForegroundColor Yellow
+$result = Invoke-RestMethod -Uri "http://localhost:5001/translate" -Method Post -Body '{"text": "hello world", "target_lang": "fr"}' -ContentType "application/json"
+Write-Host "📝 Texte: hello world" -ForegroundColor White
+Write-Host "🎯 Traduction: $($result.translated_text)" -ForegroundColor Green
+Write-Host "💾 Cache: $($result.cached)" -ForegroundColor $(if($result.cached){"Green"}else{"Yellow"})
+Write-Host "🔍 Trace ID: $($result.trace_id)" -ForegroundColor Gray
+
+Write-Host "`n3. Test avec plusieurs langues..." -ForegroundColor Yellow
+$languages = @("fr", "es", "de", "it")
+foreach ($lang in $languages) {
+    $body = "{\"text\": \"thank you\", \"target_lang\": \"$lang\"}"
+    $translation = Invoke-RestMethod -Uri "http://localhost:5001/translate" -Method Post -Body $body -ContentType "application/json"
+    Write-Host "➡️ $lang : $($translation.translated_text)" -ForegroundColor Green
+}
+
+Write-Host "`n4. Vérification des métriques..." -ForegroundColor Yellow
+$metrics = Invoke-RestMethod -Uri "http://localhost:5001/metrics" -Method Get
+Write-Host "📊 Total requests: $($metrics.total_requests)" -ForegroundColor Cyan
+Write-Host "🎯 Cache hits: $($metrics.cache_hits)" -ForegroundColor Cyan
+Write-Host "⚡ Cache hit rate: $($metrics.cache_hit_rate)" -ForegroundColor Cyan
+Write-Host "❌ Errors: $($metrics.translation_errors)" -ForegroundColor $(if($metrics.translation_errors -gt 0){"Red"}else{"Green"})
+
+Write-Host "`n5. Test métriques Prometheus..." -ForegroundColor Yellow
+try {
+    $prometheus = (Invoke-WebRequest -Uri "http://localhost:5001/metrics/prometheus" -Method Get).Content
+    $prometheusLines = $prometheus -split "`n" | Where-Object { $_ -match "http_requests_total|translations_total" }
+    Write-Host "✅ Métriques Prometheus disponibles:" -ForegroundColor Green
+    $prometheusLines | ForEach-Object { Write-Host "   $_" -ForegroundColor Gray }
+} catch {
+    Write-Host "❌ Prometheus non disponible" -ForegroundColor Red
+}
+
+Write-Host "`n=== TEST TERMINÉ ===" -ForegroundColor Green
+Lance-le :
+powershell
+.\test-translation.ps1
