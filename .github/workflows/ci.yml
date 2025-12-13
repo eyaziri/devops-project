@@ -148,7 +148,7 @@ jobs:
         echo "✅ Observability data captured"
     
     - name: Upload observability evidence
-      uses: actions/upload-artifact@v4  # CORRIGÉ : v4 au lieu de v3
+      uses: actions/upload-artifact@v4
       with:
         name: observability-proof
         path: |
@@ -161,7 +161,8 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     needs: [test, security-sast, security-dast]
-    if: github.ref == 'refs/heads/main'
+    # CORRIGÉ : Exécuter sur main ET develop
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     
     steps:
     - uses: actions/checkout@v4
@@ -200,12 +201,12 @@ jobs:
   kubernetes-deploy:
     runs-on: ubuntu-latest
     needs: build-and-push
-    if: github.ref == 'refs/heads/main'
+    # CORRIGÉ : Exécuter seulement sur main (pas sur develop)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     
     steps:
     - uses: actions/checkout@v4
     
-    # Vous utilisez Kind ET Minikube - choisissez l'un des deux
     - name: Set up Kubernetes (Kind)
       run: |
         # Installer Kind
@@ -273,7 +274,7 @@ jobs:
         echo "📸 Kubernetes deployment evidence captured"
     
     - name: Upload Kubernetes evidence
-      uses: actions/upload-artifact@v4  # CORRIGÉ : v4 au lieu de v3
+      uses: actions/upload-artifact@v4
       with:
         name: kubernetes-deployment
         path: |
@@ -290,7 +291,10 @@ jobs:
 
   final-report:
     runs-on: ubuntu-latest
-    needs: [kubernetes-deploy, observability-capture]
+    needs: 
+      - kubernetes-deploy
+      - observability-capture
+    # CORRIGÉ : Toujours exécuter le rapport final
     if: always()
     
     steps:
@@ -302,20 +306,35 @@ jobs:
         echo "## Pipeline Execution Summary" >> final-report.md
         echo "**Build Date:** $(date)" >> final-report.md
         echo "**Commit:** ${{ github.sha }}" >> final-report.md
+        echo "**Branch:** ${{ github.ref }}" >> final-report.md
         echo "## Job Status" >> final-report.md
-        echo "- ✅ Tests: ${{ needs.test.result }}" >> final-report.md
-        echo "- ✅ SAST Security: ${{ needs.security-sast.result }}" >> final-report.md
-        echo "- ✅ DAST Security: ${{ needs.security-dast.result }}" >> final-report.md
-        echo "- ✅ Docker Build: ${{ needs.build-and-push.result }}" >> final-report.md
-        echo "- ✅ Kubernetes Deploy: ${{ needs.kubernetes-deploy.result }}" >> final-report.md
+        
+        # Vérifier quels jobs ont été exécutés
+        if [ "${{ needs.kubernetes-deploy.result }}" != "skipped" ]; then
+          echo "- ✅ Kubernetes Deploy: ${{ needs.kubernetes-deploy.result }}" >> final-report.md
+        else
+          echo "- ⏭️ Kubernetes Deploy: SKIPPED (not on main branch)" >> final-report.md
+        fi
+        
+        if [ "${{ needs.observability-capture.result }}" != "skipped" ]; then
+          echo "- ✅ Observability Capture: ${{ needs.observability-capture.result }}" >> final-report.md
+        else
+          echo "- ⏭️ Observability Capture: SKIPPED" >> final-report.md
+        fi
+        
         echo "## Artifacts Generated" >> final-report.md
         echo "- Security reports (SAST/DAST)" >> final-report.md
         echo "- Observability metrics and logs" >> final-report.md
-        echo "- Kubernetes deployment evidence" >> final-report.md
-        echo "- Docker image: ${{ secrets.DOCKERHUB_USERNAME }}/translation-api:latest" >> final-report.md
+        
+        if [ "${{ needs.kubernetes-deploy.result }}" != "skipped" ]; then
+          echo "- Kubernetes deployment evidence" >> final-report.md
+          echo "- Docker image: ${{ secrets.DOCKERHUB_USERNAME }}/translation-api:latest" >> final-report.md
+        else
+          echo "- ⏭️ Kubernetes deployment: Not deployed (main branch only)" >> final-report.md
+        fi
     
     - name: Upload final report
-      uses: actions/upload-artifact@v4  # CORRIGÉ : v4 au lieu de v3
+      uses: actions/upload-artifact@v4
       with:
         name: final-documentation
         path: final-report.md
