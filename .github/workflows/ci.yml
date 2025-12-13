@@ -18,45 +18,26 @@ jobs:
       with:
         python-version: '3.9'
     
-    - name: Install dependencies
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y redis-server
+    
+    - name: Start Redis
+      run: |
+        sudo systemctl start redis
+        redis-cli ping
+    
+    - name: Install Python dependencies
       run: |
         pip install -r requirements.txt
         pip install pytest requests
     
+    
     - name: Run unit tests
       run: |
-        python -c "import app; print('✅ App imports successfully')"
-        python -c "
-        import requests
-        import subprocess
-        import time
-        
-        # Start the app in background
-        process = subprocess.Popen(['python', 'app.py'])
-        time.sleep(10)
-        
-        try:
-            # Test health endpoint
-            response = requests.get('http://localhost:5001/health', timeout=5)
-            print(f'Health check status: {response.status_code}')
-            print(f'Health response: {response.json()}')
-            
-            # Test translation endpoint
-            response = requests.post('http://localhost:5001/translate', 
-                                   json={'text': 'hello', 'target_lang': 'fr'},
-                                   timeout=5)
-            print(f'Translation status: {response.status_code}')
-            print(f'Translation response: {response.json()}')
-            
-        finally:
-            process.terminate()
-            process.wait()
-        "
-    
-    - name: Run structured tests
-      run: |
         python test_app.py
-
+      
   security-sast:
     runs-on: ubuntu-latest
     steps:
