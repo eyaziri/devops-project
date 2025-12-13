@@ -25,14 +25,14 @@ jobs:
     
     - name: Run unit tests
       run: |
-        python -c "from src import app; print('✅ App imports successfully')"
+        python -c "import app; print('✅ App imports successfully')"
         python -c "
         import requests
         import subprocess
         import time
         
         # Start the app in background
-        process = subprocess.Popen(['python', 'src/app.py'])
+        process = subprocess.Popen(['python', 'app.py'])
         time.sleep(10)
         
         try:
@@ -215,12 +215,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Set up minikube
-      uses: medyagh/setup-minikube@v1
-      with:
-        version: latest
-        driver: docker
-    
+    - name: Set up Kind
+      uses: helm/kind-action@v1.8.0
+      
+    - name: Create Kind cluster
+      run: |
+        kind create cluster --name devops-cluster
+        kubectl cluster-info --context kind-devops-cluster
+        
     - name: Start minikube cluster
       run: |
         minikube start --driver=docker --memory=4096 --cpus=2
